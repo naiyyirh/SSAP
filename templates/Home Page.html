@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- title of the web page in browser tab -->
+    <title>SSAP - Record Audio</title>
+</head>
+<body>
+    <!-- button to play the 1 pitch audio -->
+    <button onclick="play_one_pitch()">Play 1 Pitch</button>
+
+    <!-- audio player for the 1 pitch audio -->
+    <audio id="one_pitch" src="static/one_pitch.wav"></audio>
+
+    <script>
+        // function to play audio player
+        function play_one_pitch() {
+            const reference_audio = document.getElementById("one_pitch");
+            reference_audio.play();
+        }
+    </script>
+
+    <!-- button to start recording 1 pitch audio -->
+    <button id="1_pitch_record_button">Start Recording 1 Pitch</button>
+
+    <!-- button to stop recording 1 pitch audio (initially disabled) -->
+    <button id="1_pitch_stop_button" disabled>Stop Recording 1 Pitch</button>
+
+    <!-- button to play the 4 pitches audio -->
+    <button onclick="play_four_pitches()">Play 4 Pitches</button>
+
+    <!-- audio player for the 4 pitches audio -->
+    <audio id="four_pitch" src="static/four_pitch.wav"></audio>
+
+    <script>
+        // function to play audio player
+        function play_four_pitches() {
+            const reference_audio = document.getElementById("four_pitch");
+            reference_audio.play();
+        }
+    </script>
+
+    <!-- button to start recording 4 pitches audio -->
+    <button id="4_pitches_record_button">Start Recording 4 Pitches</button>
+
+    <!-- button to stop recording 4 pitches audio (initially disabled) -->
+    <button id="4_pitches_stop_button" disabled>Stop Recording 4 Pitches</button>
+
+    <!-- paragraph to display status messages -->
+    <p id="status"></p>
+
+    <!-- JavaScript code to handle the audio recording -->
+    <script>
+        // variable to store the MediaRecorder object
+        let mediaRecorder;
+        // array to store chunks of the recorded audio
+        let audioChunks = [];
+
+        // variables for the buttons and status paragraph using their IDs
+        const record_one_pitch_button = document.getElementById('1_pitch_record_button');
+        const stop_one_pitch_button = document.getElementById('1_pitch_stop_button');
+        const record_four_pitches_button = document.getElementById('4_pitches_record_button');
+        const stop_four_pitches_button = document.getElementById('4_pitches_stop_button');
+        const status = document.getElementById('status');
+
+        // event that is triggered when the record 1 pitch button is clicked that allows for other tasks to start while this one is waiting
+        record_one_pitch_button.addEventListener('click', async () => {
+            // disabling the record 4 pitches button while recording 1 pitch
+            record_four_pitches_button.disabled = true;
+            
+            // setting up source of audio data
+            const stream = 
+                // waiting until it gets a response from the browser
+                await 
+                    // part of the web browser that gives websites access to certain features of the computer
+                    navigator.
+                        // specific part of navigator that deals with cameras and microphones
+                        mediaDevices.
+                            // specifying we want access to the microphone
+                            getUserMedia({ audio: true });
+
+            // creating a MediaRecorder object to record the data from stream
+            mediaRecorder = new MediaRecorder(stream);
+
+            // event that is triggered when the media recorder object receives data from the recording
+            mediaRecorder.ondataavailable = event => {
+                // adding the recorded audio data to the audioChunks array
+                audioChunks.push(event.data);
+            };
+
+            // event that is trigged when recording stops
+            mediaRecorder.onstop = () => {
+                // putting all of the chunks into one object and indicating it's audio data in WAV format
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+                // creating a FormData object to package the audio data for sending to the server
+                const formData = new FormData();
+
+                // adding the audio Blob to the FormData object under the '1 Pitch' key with and assigning a file name to it
+                formData.append('1 Pitch', audioBlob);
+
+                // sending the FormData to the upload route of the server
+                fetch('/upload', {
+                    method: 'POST', 
+                    body: formData 
+                })
+                // when we receive a response, convert it to JSON and pass it to the next then block
+                .then(response => response.json())  
+                .then(json_response => {
+                    // if we receive a number (meaning we receive an accuracy percentage)
+                    if (!isNaN(json_response.accuracy)) {
+                        // updating the status paragraph with the accuracy result from the server's upload_file function
+                        status.textContent = `Your accuracy: ${json_response.accuracy}%`;
+                    }
+                    // if we don't receive a number (meaning we receive an error message)
+                    else {
+                        status.textContent = json_response.accuracy
+                    }
+                })
+                // logging any error to the console
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+
+                // clearing the audioChunks array for the next recording
+                audioChunks = [];
+            };
+
+            // telling the media recorder object to start recording audio
+            mediaRecorder.start();
+
+            // disabling the record button while recording
+            record_one_pitch_button.disabled = true;
+
+            // enabling the stop button while recording
+            stop_one_pitch_button.disabled = false;
+
+            // updating the status paragraph to indicate that recording is in progress
+            status.textContent = 'Recording...';
+        });
+
+        // event that triggers when the stop button is clicked
+        stop_one_pitch_button.addEventListener('click', () => {
+            // telling the media recorder object to stop recording
+            mediaRecorder.stop();
+
+            // enabling the record 1 pitch button for future recordings
+            record_one_pitch_button.disabled = false;
+
+            // enabling the record 4 pitches for future recordings
+            record_four_pitches_button.disabled = false;
+
+            // disaling the stop 1 pitch button after stopping
+            stop_one_pitch_button.disabled = true;
+
+            // updating the status paragraph to indicate that processing is underway
+            status.textContent = 'Processing...';
+        });
+
+        // event that is triggered when the record 4 pitches button is clicked that allows for other tasks to start while this one is waiting
+        record_four_pitches_button.addEventListener('click', async () => {
+            // disabling the record 1 pitch button while recording 4 pitches
+            record_one_pitch_button.disabled = true;
+            
+            // setting up source of audio data
+            const stream = 
+                // waiting until it gets a response from the browser
+                await 
+                    // part of the web browser that gives websites access to certain features of the computer
+                    navigator.
+                        // specific part of navigator that deals with cameras and microphones
+                        mediaDevices.
+                            // specifying we want access to the microphone
+                            getUserMedia({ audio: true });
+
+            // creating a MediaRecorder object to record the data from stream
+            mediaRecorder = new MediaRecorder(stream);
+
+            // event that is triggered when the media recorder object receives data from the recording
+            mediaRecorder.ondataavailable = event => {
+                // adding the recorded audio data to the audioChunks array
+                audioChunks.push(event.data);
+            };
+
+            // event that is trigged when recording stops
+            mediaRecorder.onstop = () => {
+                // putting all of the chunks into one object and indicating it's audio data in WAV format
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+                // creating a FormData object to package the audio data for sending to the server
+                const formData = new FormData();
+
+                // adding the audio Blob to the FormData object under the '4 Pitches' key with and assigning a file name to it
+                formData.append('4 Pitches', audioBlob);
+
+                // sending the FormData to the upload route of the server
+                fetch('/upload', {
+                    method: 'POST', 
+                    body: formData 
+                })
+                // when we receive a response, convert it to JSON and pass it to the next then block
+                .then(response => response.json())  
+                .then(json_response => {
+                    // if we receive a number (meaning we receive an accuracy percentage)
+                    if (!isNaN(json_response.accuracy)) {
+                        // updating the status paragraph with the accuracy result from the server's upload_file function
+                        status.textContent = `Your accuracy: ${json_response.accuracy}%`;
+                    }
+                    // if we don't receive a number (meaning we receive an error message)
+                    else {
+                        status.textContent = json_response.accuracy
+                    }
+                })
+                // logging any error to the console
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+
+                // clearing the audioChunks array for the next recording
+                audioChunks = [];
+            };
+
+            // telling the media recorder object to start recording audio
+            mediaRecorder.start();
+
+            // disabling the record button while recording
+            record_four_pitches_button.disabled = true;
+
+            // enabling the stop button while recording
+            stop_four_pitches_button.disabled = false;
+
+            // updating the status paragraph to indicate that recording is in progress
+            status.textContent = 'Recording...';
+        });
+
+        // event that triggers when the stop button is clicked
+        stop_four_pitches_button.addEventListener('click', () => {
+            // telling the media recorder object to stop recording
+            mediaRecorder.stop();
+
+            // enabling the record 4 pitches button for future recordings
+            record_four_pitches_button.disabled = false;
+
+            // enabling the record 1 pitch for future recordings
+            record_one_pitch_button.disabled = false;
+
+            // disaling the stop 4 pitches button after stopping
+            stop_four_pitches_button.disabled = true;
+
+            // updating the status paragraph to indicate that processing is underway
+            status.textContent = 'Processing...';
+        });
+    </script>
+</body>
+</html>

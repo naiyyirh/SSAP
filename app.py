@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, session
 import numpy as np
 import librosa
 import os
@@ -12,9 +12,19 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ONE_PITCH_UPLOAD_FOLDER = os.path.join(app.config["UPLOAD_FOLDER"], "one_pitch_uploads")
 FOUR_PITCH_UPLOAD_FOLDER = os.path.join(app.config["UPLOAD_FOLDER"], "four_pitch_uploads")
 
+# password for session data
+app.secret_key = "secret_key"
+
 # paths to the reference audio file
 one_pitch_reference_file = "static/one_pitch.wav"
 four_pitch_reference_file = "static/four_pitch.wav"
+# lists that hold the file paths of reference audio files for each trial
+one_pitch_reference_files = []
+four_pitch_reference_files = []
+# adding the file paths to the lists
+for i in range(1, 4):
+    one_pitch_reference_files.append("static/one_pitch/trial_" + str(i) + "_reference.wav")
+    four_pitch_reference_files.append("static/four_pitch/trial_" + str(i) + "_reference.wav")
 
 # list of notes and their corresponding frequencies
 notes_to_frequencies = [
@@ -27,31 +37,6 @@ notes_to_frequencies = [
     ("C6", 1046.50), ("D6", 1174.66), ("E6", 1318.51), ("F6", 1396.91), ("G6", 1567.98), ("A6", 1760.00), ("B6", 1975.53),
     ("C7", 2093.00)
 ]
-
-# function to find the nearest musical note for a given frequency
-def frequency_to_nearest_note(frequency):
-    # returning "Silent" if the frequency is 0
-    if frequency == 0:
-        return "Silent"
-    
-    # initializing the minimum difference to infinity
-    min_diff = float('inf')
-    # initializing the closest note as an empty string
-    closest_note = ""
-    
-    # iterating over each note and its frequency
-    for note, note_frequency in notes_to_frequencies:
-        # calculating the absolute difference between the given frequency and note frequency
-        diff = abs(frequency - note_frequency)
-        # if this difference is smaller than the current minimum difference
-        if diff < min_diff:
-            # updating the minimum difference
-            min_diff = diff  
-            # updating the closest note
-            closest_note = note  
-    
-    # returning the closest note
-    return closest_note
 
 # function to analyze pitch in an audio file
 def analyze_pitch(file_path, sr=None):
@@ -206,70 +191,139 @@ def average_accuracy(reference_pitches_per_sound, user_pitches_per_sound):
     # returning the average accuracy
     return np.mean(accuracies)
 
+# function to find the nearest musical note for a given frequency
+def frequency_to_nearest_note(frequency):
+    # returning "Silent" if the frequency is 0
+    if frequency == 0:
+        return "Silent"
+    
+    # initializing the minimum difference to infinity
+    min_diff = float('inf')
+    # initializing the closest note as an empty string
+    closest_note = ""
+    
+    # iterating over each note and its frequency
+    for note, note_frequency in notes_to_frequencies:
+        # calculating the absolute difference between the given frequency and note frequency
+        diff = abs(frequency - note_frequency)
+        # if this difference is smaller than the current minimum difference
+        if diff < min_diff:
+            # updating the minimum difference
+            min_diff = diff  
+            # updating the closest note
+            closest_note = note  
+    
+    # returning the closest note
+    return closest_note
+
 # function to display index.html for the main page
 @app.route('/')
 def index():
+    # setting the current trial to 1 when the user first visits the page
+    session['current_trial'] = 1
+    # creating a variable to store the sum of the one pitch accuracies 
+    session['one_pitch_accuracy_sum'] = 0
+    # creating a variable to store the number of completed one pitch trials
+    session['completed_one_pitch_trials'] = 0
+    # creating a variable to store the sum of the four pitch accuracies 
+    session['four_pitch_accuracy_sum'] = 0
+    # creating a variable to store the number of completed four pitch trials
+    session['completed_four_pitch_trials'] = 0
+    # showing the webpage
     return render_template('Home Page.html')
 
-# function for what to do when the audio file is uploaded
-@app.route('/upload', methods=['POST'])
-def upload_file():
+@app.route('/get_trial')
+def get_trial():
+    trial_file_path = ""
+    # if the number of completed one pitch trial results is less than the length of the list of one pitch reference files 
+    # (meaning we haven't completed all of the one pitch trials)
+    if session['completed_one_pitch_trials'] < len(one_pitch_reference_files):
+        # getting the file path for the audio clip of the one pitch trial they are currently on
+        trial_file_path = one_pitch_reference_files[session.get('current_trial') - 1]
+    # if the number oc completed one pitch trial results is greater than or equal to the length of the list of one pitch reference files
+    # (meaning we have completed all of the one pitch trials)
+    else:
+        # getting the file path for the audio clip of the four pitch trial they are currently on
+        trial_file_path = four_pitch_reference_files[session.get('current_trial') - 1]
+    # incrementing the trial number
+    session['current_trial'] += 1
+    return jsonify({'trial_file_path': trial_file_path})
+
+@app.route('/upload/<int:trial_num>', methods=['POST'])
+def upload_audio(trial_num):
     # checking if the request object contains data labeled 'audio'
     if '1 Pitch' not in request.files and '4 Pitches' not in request.files:
-        return jsonify({'Error': 'No audio file provided.'}), 400
+        return jsonify({'error': 'No valid keys provided in request object.'}), 400
     file = None
     # getting the pitch data from the request object
     if '1 Pitch' in request.files:    
         file = request.files['1 Pitch']
     else:  
         file = request.files['4 Pitches']
-
     reference_pitches = None
     user_pitches = None
     accuracy = None
-
     if '1 Pitch' in request.files:
-        # finding the number after the number of the most recent uploaded file
-        fileNum = 1
-        while os.path.exists(os.path.join(ONE_PITCH_UPLOAD_FOLDER, 'user_audio_' + str(fileNum) + ".wav")):
-            fileNum += 1
+        # making sure the trial number is valid
+        if trial_num > len(one_pitch_reference_files):
+            return jsonify({'error': 'Invalid trial number.'}), 400
 
-        # saving the uploaded file to the upload folder
-        file_path = os.path.join(ONE_PITCH_UPLOAD_FOLDER, 'user_audio_' + str(fileNum) + ".wav")
+        # saving the user's audio file with a unique name in the folder where we store trial files.
+        file_path = os.path.join(ONE_PITCH_UPLOAD_FOLDER, f'user_trial_{trial_num}.wav')
         file.save(file_path)
-
-        # analyzing both the reference audio file and the user-uploaded audio file
-        reference_pitches = analyze_pitch(one_pitch_reference_file)[1]
+        # analyzing the reference pitch from the trial's reference audio file 
+        reference_pitches = analyze_pitch(one_pitch_reference_files[trial_num - 1])[1]
+        # analyzing the pitch from the user's audio
         user_pitches = analyze_pitch(file_path)[1]
 
-        # calculating the accuracy between the reference and user pitches
-        error_message, accuracy = calculate_accuracy(np.array(reference_pitches), np.array(user_pitches))
+        # calculating how well the user imitated the reference pitch by comparing the two pitch analyses
+        error_message, accuracy = calculate_accuracy(reference_pitches, user_pitches)
         # deleting the file if an error occured and displaying an error message 
         if error_message:
             os.remove(file_path)
-            return jsonify({'accuracy': error_message})
-    else:  
-        # finding the number after the number of the most recent uploaded file
-        fileNum = 1
-        while os.path.exists(os.path.join(FOUR_PITCH_UPLOAD_FOLDER, 'user_audio_' + str(fileNum) + ".wav")):
-            fileNum += 1
+            return jsonify({'error': error_message})
+        
+        # if everything went well, adding the accuracy score for this trial to the session's one pitch accuracy sum and incrementing the completed count
+        session['one_pitch_accuracy_sum'] += accuracy
+        session['completed_one_pitch_trials'] += 1
+        # if we have completed all of the one pitch trials
+        if session['current_trial'] == len(one_pitch_reference_files) + 1:
+            # resetting the trial number to 1 (for the four pitch trials)
+            session['current_trial'] = 1
+            # returning the average accuracy
+            return jsonify({'average_accuracy': session['one_pitch_accuracy_sum']/session['completed_one_pitch_trials']})
+        
+    if '4 Pitches' in request.files:
+        # making sure the trial number is valid
+        if trial_num > len(four_pitch_reference_files):
+            return jsonify({'error': 'Invalid trial number.'}), 400
 
-        # saving the uploaded file to the upload folder
-        file_path = os.path.join(FOUR_PITCH_UPLOAD_FOLDER, 'user_audio_' + str(fileNum) + ".wav")
+        # saving the user's audio file with a unique name in the folder where we store trial files.
+        file_path = os.path.join(FOUR_PITCH_UPLOAD_FOLDER, f'user_trial_{trial_num}.wav')
         file.save(file_path)
 
-        # analyzing the user-uploaded audio file
+        # analyzing the reference pitch from the trial's reference audio file 
+        reference_pitches = analyze_four_pitches(four_pitch_reference_files[trial_num - 1])[1]
+        
+        # analyzing the pitch from the user's audio
         error_message, user_pitches = analyze_four_pitches(file_path)
+
         # deleting the file if an error occured and displaying an error message 
         if error_message:
             os.remove(file_path)
-            return jsonify({'accuracy': error_message})
-        # analyzing the reference file
-        reference_pitches = analyze_four_pitches(four_pitch_reference_file)[1]
+            return jsonify({'error': error_message})
+        
         # calculating the accuracy between the reference and user pitches
         accuracy = average_accuracy(reference_pitches, user_pitches)
-
-    # returning the accuracy as a JSON response
+        # if everything went well, adding the accuracy score for this trial to the session's four pitch accuracy sum and incrementing the completed count
+        session['four_pitch_accuracy_sum'] += accuracy
+        session['completed_four_pitch_trials'] += 1
+        # if we have completed all of the four pitch trials
+        if session['current_trial'] == len(four_pitch_reference_files) + 1:
+            # returning the average accuracy
+            return jsonify({'average_accuracy': session['four_pitch_accuracy_sum']/session['completed_four_pitch_trials']})
+        
+    # returning the accuracy score for this trial
     return jsonify({'accuracy': accuracy})
 
 # running the Flask application

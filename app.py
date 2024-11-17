@@ -11,8 +11,12 @@ matplotlib.use("Agg")
 app = Flask(__name__)
 
 # setting the app's folders where uploaded files will be stored
+participant = 1
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+while os.path.exists(os.path.join(app.config["UPLOAD_FOLDER"], "p" + str(participant))):
+    participant += 1
+app.config['UPLOAD_FOLDER'] = os.path.join(app.config["UPLOAD_FOLDER"], "p" + str(participant))
 ONE_PITCH_UPLOAD_FOLDER = os.path.join(app.config["UPLOAD_FOLDER"], "one_pitch_uploads")
 FOUR_PITCH_UPLOAD_FOLDER = os.path.join(app.config["UPLOAD_FOLDER"], "four_pitch_uploads")
 

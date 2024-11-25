@@ -16,12 +16,13 @@ The app uses **librosa** for pitch detection and **NumPy** for numerical computa
 ## Folder Structure
 
 - `uploads/`: This folder stores the uploaded audio files.
-  - `one_pitch_uploads/`: Stores user audio files for single pitch analysis.
-  - `four_pitch_uploads/`: Stores user audio files for four-pitch analysis.
+  - `p*participant number*/`: Stores user audio files for specific participant.
+    - `one_pitch_uploads/`: Stores user audio files for one-pitch analysis.
+    - `four_pitch_uploads/`: Stores user audio files for four-pitch analysis.
   
 - `static/`: Contains reference audio files used for comparison.
-  - `one_pitch.wav`: Reference file for single pitch.
-  - `four_pitch.wav`: Reference file for four-pitch sequence.
+  - `one_pitch/`: Stores reference audio files for single pitch analysis.
+  - `four_pitch/`: Stores reference audio files for four-pitch analysis.
 
 ## How It Works
 

@@ -13,7 +13,7 @@ The app uses **librosa** for pitch detection and **NumPy** for numerical computa
 - **Pitch Detection**: Uses **librosa's pYIN** algorithm for pitch detection, allowing the identification of the closest musical note.
 - **Real-time Feedback**: Provides accuracy results for the user-uploaded audio in real time.
 
-## Folder Structure
+## Non-Code Folder Structure
 
 - `uploads/`: This folder stores the uploaded audio files.
   - `p*participant number*/`: Stores user audio files for specific participant.

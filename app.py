@@ -263,4 +263,4 @@ if __name__ == '__main__':
         os.makedirs(ONE_PITCH_UPLOAD_FOLDER)
         os.makedirs(FOUR_PITCH_UPLOAD_FOLDER)
     # starting the Flask development server
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)

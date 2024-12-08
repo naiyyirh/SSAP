@@ -23,7 +23,7 @@ freq_array = np.array([freq for _, freq in notes_to_frequencies])
 # function to find the closest note a frequency is to (specifically the index of that note in notes_to_frequencies)
 def closest_note_index(freq):
     # notes_array - freq: subtracts the pitch frequency from each frequency in freq_array, giving an array of differences between freq and each note's frequency
-    # np.argmin(...): returns the index of the smallest value in the array (so the index where the difference between the note's frequency and the pitch frequency is the smallest)
+    # np.argmin(): returns the index of the smallest value in the array (so the index where the difference between the note's frequency and the pitch frequency is the smallest)
     return np.argmin(np.abs(freq_array - freq))
 
 # function to segment the array of pitches into intervals where the note changes
@@ -371,24 +371,32 @@ def calculate_accuracy(reference_pitches, user_pitches):
         )
 
     cents = calculate_cents(user_pitches, reference_pitches)
+
+    # variable to store the note (if the deviation was within 1 semitone, to use for the comfortable range)
+    note = None
+    # if the deviation was within 1 semitone
+    if sum(cents)/len(cents) <= 100:
+        note = notes_to_frequencies[closest_note_index(user_pitches[0])][0]
     # converting cents to accuracy percentages
     accuracy_percentages = 100 * np.exp(-0.001 * cents)
     # calculating the average accuracy
     average_accuracy = np.mean(accuracy_percentages)
 
-    return None, average_accuracy
+    return None, average_accuracy, note
 
 # function to calculate the average accuracy over 4 segments
 def average_accuracy(reference_pitches_per_sound, user_pitches_per_sound):    
+    # the accuracies of each pitch
     accuracies = []
-    
+    notes = []
     for i in range(4):
         # calculating accuracy for each segment
-        segment_accuracy = calculate_accuracy(reference_pitches_per_sound[i], user_pitches_per_sound[i])[1]
+        _, segment_accuracy, note = calculate_accuracy(reference_pitches_per_sound[i], user_pitches_per_sound[i])
         accuracies.append(segment_accuracy)
-    
+        # getting note for each segment
+        notes.append(note)
     # returning the average accuracy
-    return np.mean(accuracies)
+    return np.mean(accuracies), notes
 
 # function to find the nearest musical note for a given frequency
 def frequency_to_nearest_note(frequency):

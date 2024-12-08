@@ -2,12 +2,17 @@ from flask import Flask, request, jsonify, render_template, session
 import numpy as np
 import os
 import matplotlib
+import music21 
 from audio_analysis import closest_note_index, segment_pitches, middle_50_median, calculate_cents, analyze_pitch, analyze_four_pitches, calculate_accuracy, average_accuracy, frequency_to_nearest_note
 
 matplotlib.use("Agg")
 
 # creating the Flask application 
 app = Flask(__name__)
+
+# changing the current directory to the directory this file is in
+current_directory = os.path.dirname(os.path.abspath(__file__))
+os.chdir(current_directory)
 
 # setting the app's folders where uploaded files will be stored
 participant = 1
@@ -32,6 +37,12 @@ four_pitch_reference_files = []
 for i in range(1, 4):
     one_pitch_reference_files.append("static/one_pitch/trial_" + str(i) + "_reference.wav")
     four_pitch_reference_files.append("static/four_pitch/trial_" + str(i) + "_reference.wav")
+
+# all pitches in all files
+all_file_pitches = []
+
+# array to keep store notes that were successfully imitated
+comfortable_notes = []
 
 # function to display index.html for the main page
 @app.route('/')
@@ -68,6 +79,8 @@ def get_trial():
 
 @app.route('/upload/<int:trial_num>', methods=['POST'])
 def upload_audio(trial_num):
+    global all_file_pitches
+    global comfortable_notes
     # checking if the request object contains data labeled 'audio'
     if '1 Pitch' not in request.files and '4 Pitches' not in request.files:
         return jsonify({'error': 'No valid keys provided in request object.'}), 400
@@ -103,13 +116,18 @@ def upload_audio(trial_num):
         if error_message:
             os.remove(file_path)
             return jsonify({'error': error_message})
+        
+        # adding the current file's pitches to the list of all pitches
+        all_file_pitches += user_pitches.tolist()
 
         # calculating how well the user imitated the reference pitch by comparing the two pitch analyses
-        error_message, accuracy = calculate_accuracy(reference_pitches, user_pitches)
+        error_message, accuracy, note = calculate_accuracy(reference_pitches, user_pitches)
+        # adding the note to the array of comfortable notes
+        comfortable_notes.append(note)
         # deleting the files if an error occured and displaying an error message 
         if error_message:
-            os.remove(file_path)
-            os.remove(file_path[:-4] + "_F0_graph.png")
+            #os.remove(file_path)
+            #os.remove(file_path[:-4] + "_F0_graph.png")
             return jsonify({'error': error_message})
         
         # opening the F0 file in write mode
@@ -184,9 +202,12 @@ def upload_audio(trial_num):
 
         # deleting the files if an error occured and displaying an error message 
         if error_message:
-            os.remove(file_path)
-            os.remove(file_path[:-4] + "_F0_graph.png")
+            #os.remove(file_path)
+            #os.remove(file_path[:-4] + "_F0_graph.png")
             return jsonify({'error': error_message})
+        
+        # adding the current file's pitches to the list of all pitches
+        all_file_pitches += user_pitches[0].tolist() + user_pitches[1].tolist() + user_pitches[2].tolist() + user_pitches[3].tolist()
         
         # replacing NaN values in all_pitches with 0
         all_pitches = np.array([0 if np.isnan(x) else x for x in all_pitches])
@@ -240,13 +261,39 @@ def upload_audio(trial_num):
                 f.write(f"{file_path} {i + 1} {all_reference_times[reference_onsets[i]]:.2f} {all_times[user_onsets[i]]:.2f} {reference_mean_F0:.2f} {user_mean_F0:.2f} {cents:.2f} {abs_cents:.2f} {error_flag} \n")
         
         # calculating the accuracy between the reference and user pitches
-        accuracy = average_accuracy(reference_pitches, user_pitches)
+        accuracy, notes = average_accuracy(reference_pitches, user_pitches)
+        # adding the notes from all 4 pitches to the comfortable notes array
+        comfortable_notes += notes
         # if everything went well, adding the accuracy score for this trial to the session's four pitch accuracy sum and incrementing the completed count
         session['four_pitch_accuracy_sum'] += accuracy
         session['completed_four_pitch_trials'] += 1
         # if we have completed all of the four pitch trials
         if session['current_trial'] == len(four_pitch_reference_files) + 1:
-            # returning the average accuracy
+            # filtering out silent parts
+            all_file_pitches = all_file_pitches[all_file_pitches != 0]
+            # filtering out notes that weren't successfully imitated from comfortable_notes
+            comfortable_notes = [note for note in comfortable_notes if note is not None]
+            comfortable_range = None
+            # if no pitches were succesfully imitated, use the the note the user was closest to as the comf
+            if len(comfortable_notes) == 0:
+                mean_pitch = sum(all_file_pitches)/len(all_file_pitches)
+                comfortable_range = [frequency_to_nearest_note(mean_pitch)]
+            # if only 1 pitch was successfully imitated, use that note as the comfortable range
+            elif len(comfortable_notes) == 1: 
+                comfortable_range = [comfortable_notes[0]]
+            # using the lowest ad highest note as the comfortable range
+            else:
+                # converting all notes to music21.note.Note objects for comparison
+                note_objects = [music21.note.Note(note) for note in comfortable_notes]
+                
+                # sort notes by their pitch values (for every value in note_objects, replace it with a number represnting its pitch, then sort it)
+                sorted_notes = sorted(note_objects, key=lambda n: n.pitch.midi)
+                
+                # Get the lowest and highest notes
+                lowest_note = sorted_notes[0].nameWithOctave
+                highest_note = sorted_notes[-1].nameWithOctave
+                comfortable_range = [lowest_note, highest_note]
+            # returning the average accuracy and comfortable range
             return jsonify({'average_accuracy': session['four_pitch_accuracy_sum']/session['completed_four_pitch_trials']})
         
     # returning the accuracy score for this trial
@@ -254,9 +301,6 @@ def upload_audio(trial_num):
 
 # running the Flask application
 if __name__ == '__main__':
-    # changing the current directory to the directory this file is in
-    current_directory = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(current_directory)
     # creating the upload folders if they don't exist
     if not os.path.exists(app.config["UPLOAD_FOLDER"]):
         os.makedirs(app.config["UPLOAD_FOLDER"])
